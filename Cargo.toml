@@ -1,0 +1,10 @@
+[package]
+name = "rtmp-cap-analyze"
+version = "0.1.0"
+edition = "2021"
+authors = ["huheng <huheng1989@126.com>"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rml_rtmp = { git = "https://github.com/HuHeng/rust-media-libs.git", branch = "clippy"}
