@@ -2,4 +2,4 @@
 
 This reads raw binary bytes from a single direction in an RTMP stream
 
-Save audio and video messages as an flv file
+Save audio and video messages as a flv file
