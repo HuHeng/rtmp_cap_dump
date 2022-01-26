@@ -23,7 +23,7 @@ fn write_av_data(
     payload: &[u8],
     file: &mut File,
 ) -> io::Result<()> {
-    let tag_header = &mut[0_u8; 11];
+    let tag_header = &mut [0_u8; 11];
     if is_video {
         tag_header[0] = 9;
     } else {
@@ -55,11 +55,11 @@ fn write_av_data(
     file.write_all(payload)?;
 
     let tag_len = payload.len() + tag_header.len();
-    let tag_len_slice = &mut[0_u8; 4];
+    let tag_len_slice = &mut [0_u8; 4];
     tag_len_slice[0] = (tag_len >> 24 & 0xFF) as u8;
     tag_len_slice[1] = (tag_len >> 16 & 0xFF) as u8;
     tag_len_slice[2] = (tag_len >> 8 & 0xFF) as u8;
-    tag_len_slice[3] = (tag_len >> 0 & 0xFF) as u8;
+    tag_len_slice[3] = (tag_len & 0xFF) as u8;
 
     file.write_all(tag_len_slice)?;
 
@@ -102,7 +102,6 @@ fn main() -> io::Result<()> {
     if let Some(ref mut out_file) = out_file {
         out_file.write_all(FLV_HEADER)?;
     }
-
 
     let mut deserializer = ChunkDeserializer::new();
     let mut message_number = 1;
