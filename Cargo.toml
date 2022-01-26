@@ -7,4 +7,5 @@ authors = ["huheng <huheng1989@126.com>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+clap = { version = "3.0.12", features = ["derive"] }
 rml_rtmp = { git = "https://github.com/HuHeng/rust-media-libs.git", branch = "clippy"}

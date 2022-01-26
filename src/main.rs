@@ -1,33 +1,108 @@
 use rml_rtmp::chunk_io::ChunkDeserializer;
+use rml_rtmp::messages::MessagePayload;
 use rml_rtmp::messages::RtmpMessage;
-use std::env;
 use std::fs::File;
 use std::io;
+use std::io::prelude::*;
 use std::io::Read;
 use std::io::SeekFrom;
-use std::io::prelude::*;
+
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    //#[clap(short, long)]
+    input: String,
+    output: Option<String>,
+}
+
+fn write_av_data(
+    is_video: bool,
+    message: &MessagePayload,
+    payload: &[u8],
+    file: &mut File,
+) -> io::Result<()> {
+    let tag_header = &mut[0_u8; 11];
+    if is_video {
+        tag_header[0] = 9;
+    } else {
+        tag_header[0] = 8;
+    }
+
+    println!("len: {}", payload.len());
+    //data size
+    tag_header[1] = (payload.len() >> 16 & 0xFF) as u8;
+    tag_header[2] = (payload.len() >> 8 & 0xFF) as u8;
+    tag_header[3] = (payload.len() & 0xFF) as u8;
+
+    //timestamp
+    let timestamp = message.timestamp.value;
+
+    println!("timestamp: {}", timestamp);
+
+    tag_header[4] = (timestamp >> 16 & 0xFF) as u8;
+    tag_header[5] = (timestamp >> 8 & 0xFF) as u8;
+    tag_header[6] = (timestamp & 0xFF) as u8;
+    //timestamp ext
+    tag_header[7] = (timestamp >> 24 & 0xFF) as u8;
+
+    println!("tag_header: {:?}", tag_header);
+
+    file.write_all(tag_header)?;
+
+    //write payload
+    file.write_all(payload)?;
+
+    let tag_len = payload.len() + tag_header.len();
+    let tag_len_slice = &mut[0_u8; 4];
+    tag_len_slice[0] = (tag_len >> 24 & 0xFF) as u8;
+    tag_len_slice[1] = (tag_len >> 16 & 0xFF) as u8;
+    tag_len_slice[2] = (tag_len >> 8 & 0xFF) as u8;
+    tag_len_slice[3] = (tag_len >> 0 & 0xFF) as u8;
+
+    file.write_all(tag_len_slice)?;
+
+    Ok(())
+}
 
 fn main() -> io::Result<()> {
     println!("RTMP capture bin reader");
-    println!("This reads raw binary bytes from a single direction in an RTMP stream,");
+    println!("This reads raw binary bytes from a single direction in an RTMP stream");
     println!();
 
-    let args: Vec<String> = env::args().collect();
-    if args.len() <= 1 {
-        println!("No file specified to read.  Pass the path to the file you wish to read");
-        return Ok(());
-    }
+    let args = Args::parse();
 
-    let handshake_len = 3073;
+    println!("input: {}", args.input);
+    println!("output: {:?}", args.output);
 
-    println!("Reading file: {}", args[1]);
+    let handshake_len = 1 + 1536 + 1536;
+
     println!();
 
-    let file_name = args[1].clone();
+    let file_name = args.input;
     let mut file = File::open(file_name)?;
+
+    println!("skip {} handshake bytes!", handshake_len);
+
     file.seek(SeekFrom::Start(handshake_len))?;
 
-    println!("skip 3073 handshake bytes!");
+    let out_file = args.output;
+
+    static FLV_HEADER: &[u8] = &[
+        0x46, 0x4c, 0x56, 0x1, 0x05, 0x0, 0x0, 0x0, 0x9, 0x0, 0x0, 0x0, 0x0,
+    ];
+
+    let mut out_file = if let Some(out_file) = out_file {
+        File::create(out_file).ok()
+    } else {
+        None
+    };
+
+    if let Some(ref mut out_file) = out_file {
+        out_file.write_all(FLV_HEADER)?;
+    }
+
 
     let mut deserializer = ChunkDeserializer::new();
     let mut message_number = 1;
@@ -48,7 +123,7 @@ fn main() -> io::Result<()> {
         let mut has_read_one_payload = false;
         loop {
             let bytes = if has_read_one_payload {
-                &[0_u8;0]
+                &[0_u8; 0]
             } else {
                 &buffer[..bytes_read]
             };
@@ -108,7 +183,12 @@ fn main() -> io::Result<()> {
 
                             print!("{:02x}", data[x]);
                         }
-                        println!("}}", )
+                        println!("}}", );
+
+                        if let Some(ref mut out_file) = out_file {
+                            println!("write audio tag");
+                            write_av_data(false, &payload, data.as_ref(), out_file)?;
+                        }
                     },
 
                     RtmpMessage::SetChunkSize { size }
@@ -126,7 +206,7 @@ fn main() -> io::Result<()> {
 
                     RtmpMessage::VideoData { data }
                         => {
-                        print!("VideoData {{ data: ");
+                        print!("VideoData: {{ data: ");
                         for x in 0..data.len() {
                             if x > 100 {
                                 print!(".. ({}) ", data.len());
@@ -135,21 +215,22 @@ fn main() -> io::Result<()> {
 
                             print!("{:02x}", data[x]);
                         }
-                        println!("}}")
+                        println!("}}");
+
+                        if let Some(ref mut out_file) = out_file {
+                            println!("write video tag");
+                            write_av_data(true, &payload, data.as_ref(), out_file)?;
+                        }
                     },
 
                     RtmpMessage::WindowAcknowledgement { size }
                         => println!("WindowAcknowledgement {{ size: {} }}", size),
                 }
-
             } else {
-                println!("warning ------------ to rtmp message error, continue");
+                println!("Warning ------------ to rtmp message error, continue");
             }
 
             println!();
-            //println!("Press enter to read next message");
-            //let mut input = String::new();
-            //std::io::stdin().read_line(&mut input).unwrap();
 
             message_number += 1;
             has_read_one_payload = true;
